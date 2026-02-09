@@ -712,4 +712,267 @@ program
     console.log(chalk.green('\n✅ Reset complete. Run `agentcomm` to start fresh.\n'));
   });
 
+// ============================================================================
+// ORGANIZATION COMMANDS
+// ============================================================================
+
+// Org command group
+const orgCommand = program
+  .command('org')
+  .description('Organization management');
+
+// Org init - Admin sets up org
+orgCommand
+  .command('init')
+  .description('Initialize organization (admin only)')
+  .action(async () => {
+    p.intro(chalk.bgCyan(chalk.black(' Create Organization ')));
+
+    p.note(
+      'As the org admin, you\'ll set up a shared Slack app.\n' +
+      'Team members will join using an invite code.\n\n' +
+      'You need a Slack app: https://api.slack.com/apps',
+      'How It Works'
+    );
+
+    const orgName = await p.text({
+      message: 'Organization name',
+      placeholder: 'My Startup',
+      validate: (v) => !v?.trim() ? 'Required' : undefined,
+    });
+    if (p.isCancel(orgName)) return;
+
+    const slackBotToken = await p.text({
+      message: 'Slack Bot Token (xoxb-...)',
+      validate: (v) => {
+        if (!v?.trim()) return 'Required';
+        if (!v.startsWith('xoxb-')) return 'Should start with xoxb-';
+      },
+    });
+    if (p.isCancel(slackBotToken)) return;
+
+    const slackAppToken = await p.text({
+      message: 'Slack App Token (xapp-...)',
+      validate: (v) => {
+        if (!v?.trim()) return 'Required';
+        if (!v.startsWith('xapp-')) return 'Should start with xapp-';
+      },
+    });
+    if (p.isCancel(slackAppToken)) return;
+
+    const slackSigningSecret = await p.text({
+      message: 'Slack Signing Secret',
+      placeholder: 'From Basic Information page',
+    });
+
+    // Save org config
+    const config = loadConfig() || {
+      llmProvider: 'openai' as const,
+      llmModel: 'gpt-4o',
+      orgContext: { teams: [], channels: [], routingRules: [] },
+    };
+
+    const orgConfig = {
+      ...config,
+      orgName: String(orgName),
+      slackBotToken: String(slackBotToken),
+      slackAppToken: String(slackAppToken),
+      slackSigningSecret: slackSigningSecret ? String(slackSigningSecret) : undefined,
+      isOrgAdmin: true,
+    };
+
+    saveConfig(orgConfig as CLIConfig);
+
+    // Generate invite code
+    const inviteData = {
+      orgName: String(orgName),
+      slackBotToken: String(slackBotToken),
+      slackAppToken: String(slackAppToken),
+      slackSigningSecret: slackSigningSecret ? String(slackSigningSecret) : undefined,
+      created: Date.now(),
+    };
+
+    const inviteCode = Buffer.from(JSON.stringify(inviteData)).toString('base64url');
+
+    console.log();
+    p.note(
+      `${chalk.cyan(inviteCode)}\n\n` +
+      'Share this code with your team.\n' +
+      'They run: agentcomm join <code>',
+      '🎟️  Invite Code'
+    );
+
+    p.outro(chalk.green(`Organization "${orgName}" created!`));
+  });
+
+// Org invite - Generate new invite code
+orgCommand
+  .command('invite')
+  .description('Generate invite code for team members')
+  .action(async () => {
+    const config = loadConfig();
+
+    if (!config?.slackBotToken || !config?.slackAppToken) {
+      console.log(chalk.yellow('No organization configured. Run `agentcomm org init` first.\n'));
+      return;
+    }
+
+    const inviteData = {
+      orgName: (config as any).orgName || 'My Organization',
+      slackBotToken: config.slackBotToken,
+      slackAppToken: config.slackAppToken,
+      slackSigningSecret: config.slackSigningSecret,
+      created: Date.now(),
+    };
+
+    const inviteCode = Buffer.from(JSON.stringify(inviteData)).toString('base64url');
+
+    console.log();
+    p.note(
+      `${chalk.cyan(inviteCode)}\n\n` +
+      'Share this with team members.\n' +
+      'They run: agentcomm join <code>',
+      '🎟️  Invite Code'
+    );
+  });
+
+// Org info
+orgCommand
+  .command('info')
+  .description('Show organization info')
+  .action(() => {
+    const config = loadConfig();
+
+    if (!config?.slackBotToken) {
+      console.log(chalk.yellow('Not part of an organization. Run `agentcomm join <code>` or `agentcomm org init`.\n'));
+      return;
+    }
+
+    const storage = new Storage(DB_PATH);
+    const members = storage.getAllUsers();
+
+    console.log(chalk.cyan('\n🏢 Organization\n'));
+    console.log(`  Name: ${chalk.bold((config as any).orgName || 'Unknown')}`);
+    console.log(`  Role: ${(config as any).isOrgAdmin ? chalk.green('Admin') : 'Member'}`);
+    console.log(`  Members: ${members.length}`);
+    console.log(`  Slack: ${config.slackBotToken ? chalk.green('Connected') : chalk.yellow('Not connected')}`);
+    console.log();
+  });
+
+// Join command - Join org with invite code
+program
+  .command('join <code>')
+  .description('Join an organization with invite code')
+  .action(async (code: string) => {
+    p.intro(chalk.bgCyan(chalk.black(' Join Organization ')));
+
+    // Decode invite code
+    let inviteData: {
+      orgName: string;
+      slackBotToken: string;
+      slackAppToken: string;
+      slackSigningSecret?: string;
+    };
+
+    try {
+      const decoded = Buffer.from(code, 'base64url').toString('utf-8');
+      inviteData = JSON.parse(decoded);
+      
+      if (!inviteData.slackBotToken || !inviteData.slackAppToken) {
+        throw new Error('Invalid invite code');
+      }
+    } catch {
+      p.cancel('Invalid invite code. Please check and try again.');
+      process.exit(1);
+    }
+
+    console.log();
+    p.note(`You're joining: ${chalk.bold(inviteData.orgName)}`, 'Organization');
+
+    // Get user's name
+    const userName = await p.text({
+      message: 'Your name',
+      placeholder: process.env.USER || 'Your name',
+      validate: (v) => !v?.trim() ? 'Required' : undefined,
+    });
+    if (p.isCancel(userName)) return;
+
+    // Get user's API key
+    const llmProvider = await p.select({
+      message: 'Your AI provider',
+      options: [
+        { value: 'openai', label: 'OpenAI', hint: 'GPT-4o' },
+        { value: 'anthropic', label: 'Anthropic', hint: 'Claude' },
+      ],
+    });
+    if (p.isCancel(llmProvider)) return;
+
+    const envKey = llmProvider === 'openai' ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY;
+    let apiKey = envKey || '';
+
+    if (!apiKey) {
+      const keyInput = await p.password({
+        message: `Your ${llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API key`,
+        validate: (v) => !v?.trim() ? 'Required' : undefined,
+      });
+      if (p.isCancel(keyInput)) return;
+      apiKey = keyInput;
+    } else {
+      const useEnv = await p.confirm({
+        message: `Use ${llmProvider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} from environment?`,
+        initialValue: true,
+      });
+      if (p.isCancel(useEnv)) return;
+      if (!useEnv) {
+        const keyInput = await p.password({
+          message: 'Enter API key',
+        });
+        if (p.isCancel(keyInput)) return;
+        apiKey = keyInput;
+      }
+    }
+
+    // Create user and save config
+    const s = p.spinner();
+    s.start('Joining organization...');
+
+    await sleep(500);
+
+    ensureConfigDir();
+    const storage = new Storage(DB_PATH);
+
+    const user = storage.createUser({ name: String(userName) });
+    storage.createAgent({
+      userId: user.id,
+      name: `${user.name}'s Agent`,
+      status: 'active',
+    });
+
+    const config: CLIConfig = {
+      userId: user.id,
+      userName: String(userName),
+      llmProvider: llmProvider as 'openai' | 'anthropic',
+      llmModel: llmProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o',
+      apiKey,
+      slackBotToken: inviteData.slackBotToken,
+      slackAppToken: inviteData.slackAppToken,
+      slackSigningSecret: inviteData.slackSigningSecret,
+      orgContext: { teams: [], channels: [], routingRules: [] },
+    };
+    (config as any).orgName = inviteData.orgName;
+
+    saveConfig(config);
+
+    s.stop('Joined!');
+
+    const nextSteps = [
+      `${chalk.cyan('agentcomm')}        Start chatting`,
+      `${chalk.cyan('agentcomm slack')}  Connect to team Slack`,
+      `${chalk.cyan('agentcomm team')}   See team members`,
+    ];
+
+    p.note(nextSteps.join('\n'), 'Next Steps');
+    p.outro(chalk.green(`Welcome to ${inviteData.orgName}! 🎉`));
+  });
+
 program.parse();

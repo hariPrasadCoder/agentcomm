@@ -2,266 +2,241 @@
 
 **AI-first communication proxy. Talk to your agent, it handles the rest.**
 
-AgentComm sits between you and your team's communication. Instead of messaging people directly, you message your agent. Your agent figures out who to ask, what to ask, tracks responses, and follows up automatically.
-
-## The Problem
-
-- You don't know who to ask
-- You spend hours in meetings that could be async
-- You follow up manually (and forget)
-- Context gets lost across conversations
-- New hires don't know where to find information
-
-## The Solution
-
-Every person has an AI agent. You tell your agent what you need. Your agent:
-
-1. **Figures out who** should handle your request
-2. **Formulates a clear ask** and sends it
-3. **Tracks the request** and follows up automatically
-4. **Reports back** when you have an answer
-
-On the receiving end, your agent shows you **tasks** — clear asks from others that need your input. No more buried messages.
-
-```
-You → Your Agent → Their Agent → Them
-                        ↓
-                  (answers queue)
-                        ↓
-     Your Agent ← Their Agent ← Them
-```
-
-## Features
-
-- 🤖 **Personal Agent** - Each user has their own AI agent
-- 💬 **Slack Integration** - Works where your team already is
-- 🖥️ **CLI Interface** - Terminal-native for developers
-- 🌐 **Web Dashboard** - Visual overview of tasks and requests
-- 🔄 **Auto Follow-ups** - Never manually "bump" again
-- 🧠 **Shared Memory** - Team knowledge that builds over time
-- 🔒 **Privacy Controls** - Public vs private conversation distinction
+Stop chasing people for answers. Stop drowning in messages. Tell your agent what you need — it figures out who to ask, sends the request, follows up, and reports back.
 
 ## Quick Start
 
-### 1. Install
+```bash
+npx agentcomm
+```
+
+That's it. First run walks you through setup in 60 seconds.
+
+## What It Does
+
+```
+You: "I need the Q4 marketing report"
+
+Agent: Got it! I've sent your request to Sarah (Marketing Lead).
+       I'll follow up if she doesn't respond and let you know 
+       when I have an answer.
+
+... later ...
+
+Agent: ✅ Sarah responded! Here's the Q4 report: [link]
+```
+
+### The Problem
+
+- You don't know who to ask
+- Following up is tedious and awkward  
+- Context gets lost across conversations
+- Meetings that could be async
+
+### The Solution
+
+Everyone gets an AI agent. You talk to your agent. Your agent:
+
+1. **Routes** your request to the right person
+2. **Tracks** the request and follows up automatically
+3. **Reports back** when you have an answer
+
+On the flip side, your agent shows you **tasks** — clear asks from others that need your input.
+
+## Installation
+
+### Option 1: npx (Recommended)
 
 ```bash
-# Clone the repo
+npx agentcomm
+```
+
+### Option 2: Global Install
+
+```bash
+npm install -g agentcomm
+agentcomm
+```
+
+### Option 3: From Source
+
+```bash
 git clone https://github.com/hariPrasadCoder/agentcomm.git
 cd agentcomm
-
-# Install dependencies
 npm install
-
-# Build
 npm run build
+npm start
 ```
 
-### 2. Configure
+## Commands
 
-```bash
-# Copy environment file
-cp .env.example .env
-
-# Edit with your API key
-# OPENAI_API_KEY=sk-... (or ANTHROPIC_API_KEY)
-```
-
-### 3. Run Setup
-
-```bash
-# Interactive setup
-npm run start -- setup
-
-# Or directly
-node dist/cli/index.js setup
-```
-
-### 4. Start Chatting
-
-```bash
-# Terminal chat interface
-npm run start -- chat
-
-# Or run the web dashboard
-npm run dashboard
-# Open http://localhost:3000
-```
-
-## Usage
-
-### CLI Commands
-
-```bash
-agentcomm setup        # Configure your agent
-agentcomm chat         # Start chatting with your agent
-agentcomm tasks        # View your pending tasks
-agentcomm status       # Check your outgoing requests
-agentcomm add-member   # Add a team member
-agentcomm members      # List team members
-agentcomm daemon       # Run as background service
-agentcomm slack        # Start Slack integration
-```
-
-### Talking to Your Agent
-
-**Create a request:**
-```
-You: I need the Q4 marketing report from the marketing team
-Agent: Got it! I've sent your request to Sarah (Marketing Lead).
-       I'll follow up if she doesn't respond and let you know when I have an answer.
-```
-
-**Check your tasks:**
-```
-You: tasks
-Agent: Your Task Queue (2):
-       1. Request from Alex: Need API documentation for the payment integration
-       2. Request from Jordan: Budget approval for design tools
-```
-
-**Respond to a task:**
-```
-You: 1. Here's the API docs: https://docs.example.com/payments
-Agent: ✅ Response sent to Alex!
-```
-
-**Check status:**
-```
-You: status
-Agent: Your Active Requests:
-       • Q4 marketing report → Sarah (waiting_response)
-       • Legal review for contract → Legal Team (pending)
-```
+| Command | Description |
+|---------|-------------|
+| `agentcomm` | Start chatting (runs setup on first run) |
+| `agentcomm tasks` | See what others need from you |
+| `agentcomm status` | Check your outgoing requests |
+| `agentcomm add-member` | Add a teammate |
+| `agentcomm members` | List your team |
+| `agentcomm slack` | Start Slack integration |
+| `agentcomm dashboard` | Open web dashboard |
+| `agentcomm daemon` | Run background follow-ups |
+| `agentcomm reset` | Reset all local data |
 
 ## Slack Integration
 
-### Setup Slack App
+AgentComm works standalone, but it's most powerful when connected to Slack — your agent can message teammates directly.
 
-1. Create a new Slack app at [api.slack.com/apps](https://api.slack.com/apps)
+### Setup Slack
 
-2. Enable Socket Mode and get your App Token
+1. **Create a Slack App**
+   - Go to [api.slack.com/apps](https://api.slack.com/apps)
+   - Click "Create New App" → "From scratch"
+   - Name it "AgentComm" and select your workspace
 
-3. Add Bot Token Scopes:
-   - `chat:write`
-   - `im:history`
-   - `im:write`
-   - `users:read`
-   - `channels:read`
-   - `commands`
+2. **Enable Socket Mode**
+   - Go to "Socket Mode" in the sidebar
+   - Toggle it ON
+   - Create an App-Level Token with `connections:write` scope
+   - Save this token (starts with `xapp-`)
 
-4. Install to your workspace
+3. **Add Bot Scopes**
+   - Go to "OAuth & Permissions"
+   - Under "Bot Token Scopes", add:
+     - `chat:write`
+     - `im:history`
+     - `im:write`
+     - `users:read`
+     - `channels:read`
+   - Install the app to your workspace
+   - Copy the Bot Token (starts with `xoxb-`)
 
-5. Add credentials to `.env`:
-   ```
-   SLACK_BOT_TOKEN=xoxb-...
-   SLACK_SIGNING_SECRET=...
-   SLACK_APP_TOKEN=xapp-...
-   ```
+4. **Get Signing Secret**
+   - Go to "Basic Information"
+   - Copy the "Signing Secret"
 
-6. Start the Slack bot:
+5. **Connect AgentComm**
    ```bash
-   npm run slack
+   agentcomm slack
+   # Enter your tokens when prompted
    ```
 
-### Using in Slack
+Now teammates can DM the AgentComm bot to interact with their agents!
 
-- **DM the bot** to interact with your agent
-- **Use `/agent`** slash command from any channel
-- **View the App Home** for your dashboard
-
-## Architecture
+## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    MEMORY LAYER                         │
-│  Stores public conversations, decisions, knowledge      │
+│       Stores team knowledge (public conversations)      │
 └─────────────────────────────────────────────────────────┘
                            ↑ writes
                            ↓ reads
 ┌─────────────────────────────────────────────────────────┐
 │                    AGENT LAYER                          │
-│  Personal agent per user, handles routing & tracking    │
+│       Personal agent per user, handles routing          │
 └─────────────────────────────────────────────────────────┘
                            ↕
 ┌─────────────────────────────────────────────────────────┐
 │                 COMMUNICATION LAYER                     │
-│              Slack, CLI, Web Dashboard                  │
+│              Slack / CLI / Web Dashboard                │
 └─────────────────────────────────────────────────────────┘
 ```
 
+### Data Storage
+
+All data is stored locally in `~/.agentcomm/`:
+- `config.json` - Your settings and API keys
+- `agentcomm.db` - SQLite database with users, requests, tasks
+
+When connected to Slack, agent-to-agent communication happens through Slack DMs.
+
+## Team Setup
+
+For a startup/team to adopt AgentComm:
+
+1. **Each person** runs `npx agentcomm` on their machine
+2. **Connect to the same Slack workspace** via `agentcomm slack`
+3. **Add teammates** with `agentcomm add-member` (or they auto-sync from Slack)
+
+That's it — agents can now route requests to each other via Slack.
+
 ## Configuration
 
-### LLM Providers
+Config is stored in `~/.agentcomm/config.json`:
 
-AgentComm supports OpenAI and Anthropic:
-
-```env
-# OpenAI
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o
-OPENAI_API_KEY=sk-...
-
-# Anthropic
-LLM_PROVIDER=anthropic
-LLM_MODEL=claude-sonnet-4-20250514
-ANTHROPIC_API_KEY=sk-ant-...
+```json
+{
+  "userId": "...",
+  "userName": "Hari",
+  "llmProvider": "openai",
+  "llmModel": "gpt-4o",
+  "apiKey": "sk-...",
+  "slackBotToken": "xoxb-...",
+  "slackAppToken": "xapp-...",
+  "orgContext": {
+    "teams": [],
+    "channels": [],
+    "routingRules": []
+  }
+}
 ```
 
-### Organizational Context
+### Supported LLM Providers
 
-Add team members and routing rules for better request routing:
+- **OpenAI**: `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`
+- **Anthropic**: `claude-sonnet-4-20250514`, `claude-3-opus`, `claude-3-haiku`
 
-```bash
-# Add team members
-agentcomm add-member
+## Examples
 
-# The agent learns who handles what based on:
-# - Role and team assignments
-# - Expertise tags
-# - Past routing patterns
+### Request something from another team
+
+```
+You: I need legal review on the new contractor agreement
+
+Agent: Got it! I've sent your request to Jamie (Legal).
+       Request: "Legal review needed for new contractor agreement"
+       I'll follow up if they don't respond within 24 hours.
 ```
 
-## Development
+### Check your tasks
 
-```bash
-# Run in development mode
-npm run dev
+```
+You: tasks
 
-# Run tests
-npm test
+Agent: 📥 Your Pending Tasks (2):
 
-# Lint
-npm run lint
+       1. Request from Alex (Engineering)
+          "Need API documentation for the payment integration"
+       
+       2. Request from Jordan (Product)
+          "Can you review the new onboarding flow mockups?"
+```
+
+### Respond to a task
+
+```
+You: 1. Here's the API docs: https://docs.example.com/payments
+
+Agent: ✅ Response sent to Alex!
 ```
 
 ## Roadmap
 
-- [ ] Agent-to-agent protocol (agents negotiate directly)
-- [ ] Email integration
+- [ ] Agent-to-agent protocol (direct negotiation)
 - [ ] Microsoft Teams integration
+- [ ] Email integration  
 - [ ] Vector search for memory
-- [ ] Mobile app
 - [ ] Calendar integration
-- [ ] Meeting summary → action item extraction
-
-## Why Open Source?
-
-Communication tools shouldn't lock you in. Your team's knowledge and workflows should be portable. AgentComm is open source so you can:
-
-- Self-host with full control
-- Extend and customize
-- Integrate with your existing tools
-- Trust what's happening with your data
+- [ ] Mobile app
 
 ## Contributing
 
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting PRs.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-Built with 🤖 by [Hari Prasad](https://github.com/hariPrasadCoder)
+Built by [Hari Prasad](https://github.com/hariPrasadCoder) · [Report Bug](https://github.com/hariPrasadCoder/agentcomm/issues) · [Request Feature](https://github.com/hariPrasadCoder/agentcomm/issues)

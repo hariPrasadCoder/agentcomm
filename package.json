@@ -3,9 +3,15 @@
   "version": "0.1.0",
   "description": "AI-first communication proxy. Talk to your agent, it handles the rest.",
   "main": "dist/index.js",
+  "type": "module",
   "bin": {
     "agentcomm": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/cli/index.ts",
@@ -13,7 +19,16 @@
     "slack": "tsx src/slack/index.ts",
     "dashboard": "tsx src/web/server.ts",
     "lint": "eslint src",
-    "test": "vitest"
+    "test": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hariPrasadCoder/agentcomm.git"
+  },
+  "homepage": "https://github.com/hariPrasadCoder/agentcomm#readme",
+  "bugs": {
+    "url": "https://github.com/hariPrasadCoder/agentcomm/issues"
   },
   "keywords": [
     "ai",

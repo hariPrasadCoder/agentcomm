@@ -12,23 +12,53 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import ora from 'ora';
-import inquirer from 'inquirer';
+import * as p from '@clack/prompts';
 import { Storage } from '../storage/database.js';
 import { CommunicationAgent, type AgentConfig } from '../core/agent.js';
-import type { User, Agent, OrgContext, LLMConfig } from '../core/types.js';
+import type { OrgContext, LLMConfig } from '../core/types.js';
 import dotenv from 'dotenv';
 import { createInterface } from 'readline';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { homedir } from 'os';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
+import { setTimeout as sleep } from 'timers/promises';
 
 dotenv.config();
 
 const CONFIG_DIR = join(homedir(), '.agentcomm');
 const CONFIG_PATH = join(CONFIG_DIR, 'config.json');
 const DB_PATH = join(CONFIG_DIR, 'agentcomm.db');
+
+const VERSION = '0.1.0';
+
+// ============================================================================
+// BRANDING
+// ============================================================================
+
+const LOGO = `
+   █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+  ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+  ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
+  ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
+  ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
+  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
+   ██████╗ ██████╗ ███╗   ███╗███╗   ███╗
+  ██╔════╝██╔═══██╗████╗ ████║████╗ ████║
+  ██║     ██║   ██║██╔████╔██║██╔████╔██║
+  ██║     ██║   ██║██║╚██╔╝██║██║╚██╔╝██║
+  ╚██████╗╚██████╔╝██║ ╚═╝ ██║██║ ╚═╝ ██║
+   ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝
+`;
+
+function printBanner(): void {
+  console.log(chalk.cyan(LOGO));
+  console.log(chalk.gray('  AI-first communication proxy'));
+  console.log(chalk.gray(`  v${VERSION}\n`));
+}
+
+// ============================================================================
+// CONFIG
+// ============================================================================
 
 interface CLIConfig {
   userId?: string;
@@ -50,7 +80,11 @@ function ensureConfigDir(): void {
 
 function loadConfig(): CLIConfig | null {
   if (existsSync(CONFIG_PATH)) {
-    return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+    try {
+      return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -66,83 +100,190 @@ function isConfigured(): boolean {
 }
 
 // ============================================================================
-// FIRST RUN EXPERIENCE
+// FIRST RUN SETUP (using @clack/prompts)
 // ============================================================================
 
-async function firstRunSetup(): Promise<void> {
-  console.log(chalk.cyan(`
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║   🤖  Welcome to AgentComm                                    ║
-║                                                               ║
-║   AI-first communication proxy.                               ║
-║   Talk to your agent, it handles the rest.                    ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
-`));
+async function runSetupWizard(): Promise<void> {
+  printBanner();
+  
+  p.intro(chalk.bgCyan(chalk.black(' AgentComm Setup ')));
 
-  console.log(chalk.gray('Let\'s get you set up in 60 seconds.\n'));
-
-  const answers = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'userName',
-      message: 'What\'s your name?',
-      default: process.env.USER || 'User',
-    },
-    {
-      type: 'list',
-      name: 'llmProvider',
-      message: 'Which AI provider do you want to use?',
-      choices: [
-        { name: 'OpenAI (GPT-4o)', value: 'openai' },
-        { name: 'Anthropic (Claude)', value: 'anthropic' },
+  // Check for existing config
+  const existingConfig = loadConfig();
+  if (existingConfig?.userId) {
+    const action = await p.select({
+      message: 'Existing configuration found. What would you like to do?',
+      options: [
+        { value: 'keep', label: 'Keep existing config', hint: 'Start chatting with current settings' },
+        { value: 'modify', label: 'Modify settings', hint: 'Update API key or provider' },
+        { value: 'reset', label: 'Start fresh', hint: 'Delete all data and reconfigure' },
       ],
-    },
-    {
-      type: 'password',
-      name: 'apiKey',
-      message: (answers) => `Enter your ${answers.llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API key:`,
-      validate: (input) => input.length > 0 || 'API key is required',
-    },
-    {
-      type: 'confirm',
-      name: 'setupSlack',
-      message: 'Do you want to connect to Slack? (You can do this later)',
-      default: false,
-    },
-  ]);
+    });
 
-  let slackConfig = {};
-  if (answers.setupSlack) {
-    console.log(chalk.gray('\nFor Slack, you\'ll need a Slack app. Create one at https://api.slack.com/apps\n'));
-    
-    const slackAnswers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'slackBotToken',
-        message: 'Slack Bot Token (xoxb-...):',
-      },
-      {
-        type: 'input',
-        name: 'slackAppToken',
-        message: 'Slack App Token (xapp-...):',
-      },
-      {
-        type: 'input',
-        name: 'slackSigningSecret',
-        message: 'Slack Signing Secret:',
-      },
-    ]);
-    slackConfig = slackAnswers;
+    if (p.isCancel(action)) {
+      p.cancel('Setup cancelled.');
+      process.exit(0);
+    }
+
+    if (action === 'keep') {
+      p.outro(chalk.green('Ready! Run `agentcomm chat` to start.'));
+      return;
+    }
+
+    if (action === 'reset') {
+      const confirmReset = await p.confirm({
+        message: 'This will delete all local data. Continue?',
+        initialValue: false,
+      });
+      
+      if (p.isCancel(confirmReset) || !confirmReset) {
+        p.cancel('Reset cancelled.');
+        process.exit(0);
+      }
+
+      if (existsSync(CONFIG_DIR)) {
+        rmSync(CONFIG_DIR, { recursive: true });
+      }
+    }
   }
 
-  // Initialize storage and create user
+  // Setup flow
+  const setupMode = await p.select({
+    message: 'How would you like to set up AgentComm?',
+    options: [
+      { value: 'quickstart', label: 'QuickStart', hint: 'Just the basics — get chatting in 30 seconds' },
+      { value: 'full', label: 'Full Setup', hint: 'Configure Slack integration and team members' },
+    ],
+  });
+
+  if (p.isCancel(setupMode)) {
+    p.cancel('Setup cancelled.');
+    process.exit(0);
+  }
+
+  // Basic info
+  const userName = await p.text({
+    message: 'What\'s your name?',
+    placeholder: process.env.USER || 'Your name',
+    validate: (value) => {
+      if (!value.trim()) return 'Name is required';
+    },
+  });
+
+  if (p.isCancel(userName)) {
+    p.cancel('Setup cancelled.');
+    process.exit(0);
+  }
+
+  // LLM Provider
+  const llmProvider = await p.select({
+    message: 'Which AI provider?',
+    options: [
+      { value: 'openai', label: 'OpenAI', hint: 'GPT-4o, GPT-4 Turbo' },
+      { value: 'anthropic', label: 'Anthropic', hint: 'Claude 3.5 Sonnet, Claude 3 Opus' },
+    ],
+  });
+
+  if (p.isCancel(llmProvider)) {
+    p.cancel('Setup cancelled.');
+    process.exit(0);
+  }
+
+  // API Key
+  const envKey = llmProvider === 'openai' ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY;
+  
+  let apiKey: string;
+  if (envKey) {
+    const useEnvKey = await p.confirm({
+      message: `Found ${llmProvider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} in environment. Use it?`,
+      initialValue: true,
+    });
+    
+    if (p.isCancel(useEnvKey)) {
+      p.cancel('Setup cancelled.');
+      process.exit(0);
+    }
+    
+    apiKey = useEnvKey ? envKey : '';
+  } else {
+    apiKey = '';
+  }
+
+  if (!apiKey) {
+    const keyInput = await p.password({
+      message: `Enter your ${llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API key:`,
+      validate: (value) => {
+        if (!value.trim()) return 'API key is required';
+        if (llmProvider === 'openai' && !value.startsWith('sk-')) {
+          return 'OpenAI keys start with sk-';
+        }
+      },
+    });
+
+    if (p.isCancel(keyInput)) {
+      p.cancel('Setup cancelled.');
+      process.exit(0);
+    }
+    
+    apiKey = keyInput;
+  }
+
+  // Slack setup (full mode only)
+  let slackConfig = {};
+  if (setupMode === 'full') {
+    const setupSlack = await p.confirm({
+      message: 'Set up Slack integration?',
+      initialValue: false,
+    });
+
+    if (!p.isCancel(setupSlack) && setupSlack) {
+      p.note(
+        'Create a Slack app at https://api.slack.com/apps\n' +
+        'Enable Socket Mode and add these Bot Token Scopes:\n' +
+        '  • chat:write\n' +
+        '  • im:history, im:write\n' +
+        '  • users:read, channels:read',
+        'Slack Setup'
+      );
+
+      const slackBotToken = await p.text({
+        message: 'Slack Bot Token (xoxb-...):',
+        placeholder: 'xoxb-...',
+        validate: (v) => v && !v.startsWith('xoxb-') ? 'Should start with xoxb-' : undefined,
+      });
+
+      const slackAppToken = await p.text({
+        message: 'Slack App Token (xapp-...):',
+        placeholder: 'xapp-...',
+        validate: (v) => v && !v.startsWith('xapp-') ? 'Should start with xapp-' : undefined,
+      });
+
+      const slackSigningSecret = await p.text({
+        message: 'Slack Signing Secret:',
+        placeholder: 'Your signing secret',
+      });
+
+      if (!p.isCancel(slackBotToken) && !p.isCancel(slackAppToken)) {
+        slackConfig = {
+          slackBotToken: slackBotToken || undefined,
+          slackAppToken: slackAppToken || undefined,
+          slackSigningSecret: slackSigningSecret || undefined,
+        };
+      }
+    }
+  }
+
+  // Create user and agent
+  const s = p.spinner();
+  s.start('Setting up your agent...');
+  
+  await sleep(500); // Brief pause for effect
+  
   ensureConfigDir();
   const storage = new Storage(DB_PATH);
   
-  const user = storage.createUser({ name: answers.userName });
-  const agent = storage.createAgent({
+  const user = storage.createUser({ name: String(userName) });
+  storage.createAgent({
     userId: user.id,
     name: `${user.name}'s Agent`,
     status: 'active',
@@ -150,42 +291,38 @@ async function firstRunSetup(): Promise<void> {
 
   const config: CLIConfig = {
     userId: user.id,
-    userName: answers.userName,
-    llmProvider: answers.llmProvider,
-    llmModel: answers.llmProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o',
-    apiKey: answers.apiKey,
+    userName: String(userName),
+    llmProvider: llmProvider as 'openai' | 'anthropic',
+    llmModel: llmProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o',
+    apiKey,
     ...slackConfig,
     orgContext: { teams: [], channels: [], routingRules: [] },
   };
 
   saveConfig(config);
+  
+  s.stop('Agent ready!');
 
-  console.log(chalk.green(`
-✅ Setup complete!
+  // Next steps
+  const nextSteps = [
+    `${chalk.cyan('agentcomm')}           Start chatting`,
+    `${chalk.cyan('agentcomm add-member')} Add teammates`,
+    `${chalk.cyan('agentcomm slack')}      Connect to Slack`,
+    `${chalk.cyan('agentcomm dashboard')}  Open web UI`,
+  ];
 
-Your agent is ready. Here's what you can do:
+  p.note(nextSteps.join('\n'), 'Next Steps');
+  
+  p.outro(chalk.green('Setup complete! 🎉'));
 
-  ${chalk.cyan('agentcomm')}              Start chatting with your agent
-  ${chalk.cyan('agentcomm tasks')}        See what others need from you
-  ${chalk.cyan('agentcomm status')}       Check your outgoing requests
-  ${chalk.cyan('agentcomm add-member')}   Add a teammate
-  ${chalk.cyan('agentcomm slack')}        Start Slack integration
-  ${chalk.cyan('agentcomm dashboard')}    Open web dashboard
+  // Offer to start chatting
+  const startNow = await p.confirm({
+    message: 'Start chatting now?',
+    initialValue: true,
+  });
 
-Config saved to: ${chalk.gray(CONFIG_PATH)}
-`));
-
-  // Ask if they want to start chatting now
-  const { startNow } = await inquirer.prompt([
-    {
-      type: 'confirm',
-      name: 'startNow',
-      message: 'Start chatting with your agent now?',
-      default: true,
-    },
-  ]);
-
-  if (startNow) {
+  if (!p.isCancel(startNow) && startNow) {
+    console.log();
     await startChat();
   }
 }
@@ -198,8 +335,7 @@ async function startChat(): Promise<void> {
   const config = loadConfig();
   
   if (!config?.userId || !config?.apiKey) {
-    console.log(chalk.yellow('Please run setup first.\n'));
-    await firstRunSetup();
+    await runSetupWizard();
     return;
   }
 
@@ -208,8 +344,8 @@ async function startChat(): Promise<void> {
   const agentRecord = storage.getAgentByUserId(config.userId);
   
   if (!user || !agentRecord) {
-    console.log(chalk.yellow('User not found. Running setup again...\n'));
-    await firstRunSetup();
+    console.log(chalk.yellow('User not found. Running setup...\n'));
+    await runSetupWizard();
     return;
   }
 
@@ -219,14 +355,15 @@ async function startChat(): Promise<void> {
     apiKey: config.apiKey,
   };
 
-  const agentConfig: AgentConfig = {
-    llmConfig,
-    dbPath: DB_PATH,
-  };
+  const agent = new CommunicationAgent(
+    user, 
+    agentRecord, 
+    { llmConfig, dbPath: DB_PATH }, 
+    storage, 
+    config.orgContext
+  );
 
-  const agent = new CommunicationAgent(user, agentRecord, agentConfig, storage, config.orgContext);
-
-  // Event handlers for notifications
+  // Event handlers
   agent.on('request.completed', (event) => {
     const payload = event.payload as { request: { subject: string }; response: string };
     console.log(chalk.green(`\n✅ Request "${payload.request.subject}" completed!`));
@@ -234,11 +371,11 @@ async function startChat(): Promise<void> {
   });
 
   console.log(chalk.cyan(`
-🤖 AgentComm - ${user.name}'s Agent
-${chalk.gray('━'.repeat(40))}
-Type your message and press Enter.
-Commands: ${chalk.gray('tasks, status, exit')}
-${chalk.gray('━'.repeat(40))}
+┌─────────────────────────────────────────────────┐
+│  🤖 AgentComm — ${user.name}'s Agent${' '.repeat(Math.max(0, 22 - user.name.length))}│
+├─────────────────────────────────────────────────┤
+│  Commands: tasks, status, help, exit            │
+└─────────────────────────────────────────────────┘
 `));
 
   const rl = createInterface({
@@ -247,7 +384,7 @@ ${chalk.gray('━'.repeat(40))}
   });
 
   const prompt = () => {
-    rl.question(chalk.blue('You › '), async (input) => {
+    rl.question(chalk.cyan('You › '), async (input) => {
       const trimmed = input.trim();
       
       if (!trimmed) {
@@ -255,20 +392,38 @@ ${chalk.gray('━'.repeat(40))}
         return;
       }
 
+      // Built-in commands
       if (trimmed.toLowerCase() === 'exit' || trimmed.toLowerCase() === 'quit') {
         console.log(chalk.gray('\nGoodbye! 👋\n'));
         rl.close();
         process.exit(0);
       }
 
-      const spinner = ora({ text: 'Thinking...', color: 'cyan' }).start();
+      if (trimmed.toLowerCase() === 'help') {
+        console.log(chalk.gray(`
+  Commands:
+    tasks     See what others need from you
+    status    Check your outgoing requests
+    exit      Quit the chat
+
+  Or just type naturally:
+    "I need the Q4 report from marketing"
+    "What's on my plate?"
+`));
+        prompt();
+        return;
+      }
+
+      // Show thinking indicator
+      process.stdout.write(chalk.gray('  Thinking...'));
       
       try {
         const response = await agent.handleUserMessage(trimmed);
-        spinner.stop();
+        // Clear "Thinking..." and show response
+        process.stdout.write('\r' + ' '.repeat(20) + '\r');
         console.log(chalk.green('Agent › ') + response + '\n');
       } catch (error) {
-        spinner.stop();
+        process.stdout.write('\r' + ' '.repeat(20) + '\r');
         console.log(chalk.red('Error: ') + (error as Error).message + '\n');
       }
 
@@ -288,72 +443,69 @@ const program = new Command();
 program
   .name('agentcomm')
   .description('AI-first communication proxy. Talk to your agent, it handles the rest.')
-  .version('0.1.0');
+  .version(VERSION);
 
-// Default command (no arguments) - either setup or chat
+// Default action
 program
   .action(async () => {
     if (!isConfigured()) {
-      await firstRunSetup();
+      await runSetupWizard();
     } else {
       await startChat();
     }
   });
 
-// Setup command
+// Setup
 program
   .command('setup')
-  .description('Configure AgentComm (re-run setup)')
-  .action(async () => {
-    await firstRunSetup();
-  });
+  .description('Configure AgentComm')
+  .action(runSetupWizard);
 
-// Chat command
+// Chat
 program
   .command('chat')
   .description('Start chatting with your agent')
-  .action(async () => {
-    await startChat();
-  });
+  .action(startChat);
 
-// Tasks command
+// Tasks
 program
   .command('tasks')
   .description('Show your pending tasks')
   .action(() => {
     const config = loadConfig();
     if (!config?.userId) {
-      console.log(chalk.yellow('Please run `agentcomm` first to set up.\n'));
+      console.log(chalk.yellow('Run `agentcomm` first to set up.\n'));
       return;
     }
 
     const storage = new Storage(DB_PATH);
     const tasks = storage.getTasksForUser(config.userId, 'pending');
     
-    console.log(chalk.cyan('\n📥 Your Pending Tasks:\n'));
+    console.log(chalk.cyan('\n📥 Pending Tasks\n'));
     
     if (tasks.length === 0) {
-      console.log('  🎉 No pending tasks! You\'re all caught up.\n');
+      console.log(chalk.gray('  No pending tasks — you\'re all caught up! 🎉\n'));
       return;
     }
 
     tasks.forEach((t, i) => {
       const request = storage.getRequest(t.requestId);
       const from = request?.fromUserId ? storage.getUser(request.fromUserId)?.name : 'Unknown';
-      console.log(`  ${chalk.bold(`${i + 1}.`)} ${t.title} ${chalk.gray(`(from ${from})`)}`);
+      console.log(`  ${chalk.bold(`${i + 1}.`)} ${t.title}`);
+      console.log(`     ${chalk.gray(`from ${from}`)}`);
       if (t.description) console.log(`     ${chalk.gray(t.description)}`);
       console.log();
     });
   });
 
-// Status command
+// Status
 program
   .command('status')
-  .description('Show status of your outgoing requests')
+  .description('Show your outgoing requests')
   .action(() => {
     const config = loadConfig();
     if (!config?.userId) {
-      console.log(chalk.yellow('Please run `agentcomm` first to set up.\n'));
+      console.log(chalk.yellow('Run `agentcomm` first to set up.\n'));
       return;
     }
 
@@ -361,48 +513,63 @@ program
     const requests = storage.getRequestsByFromUser(config.userId);
     const active = requests.filter(r => r.status !== 'completed' && r.status !== 'cancelled');
     
-    console.log(chalk.cyan('\n📤 Your Active Requests:\n'));
+    console.log(chalk.cyan('\n📤 Active Requests\n'));
     
     if (active.length === 0) {
-      console.log('  No active requests.\n');
+      console.log(chalk.gray('  No active requests.\n'));
       return;
     }
 
     active.forEach(r => {
-      const target = r.toUserId ? storage.getUser(r.toUserId)?.name : 'Unknown';
-      const statusColor = r.status === 'waiting_response' ? chalk.yellow : chalk.blue;
-      console.log(`  • ${chalk.bold(r.subject)} → ${target} ${statusColor(`(${r.status})`)}`);
+      const target = r.toUserId ? storage.getUser(r.toUserId)?.name : 'Unassigned';
+      const statusIcon = r.status === 'waiting_response' ? '⏳' : '📨';
+      console.log(`  ${statusIcon} ${chalk.bold(r.subject)}`);
+      console.log(`     ${chalk.gray(`→ ${target} (${r.status})`)}\n`);
     });
-    console.log();
   });
 
-// Add team member
+// Add member
 program
   .command('add-member')
-  .description('Add a team member to your organization')
+  .description('Add a team member')
   .action(async () => {
     const config = loadConfig();
     if (!config?.userId) {
-      console.log(chalk.yellow('Please run `agentcomm` first to set up.\n'));
+      console.log(chalk.yellow('Run `agentcomm` first to set up.\n'));
       return;
     }
 
-    const storage = new Storage(DB_PATH);
-    
-    const answers = await inquirer.prompt([
-      { type: 'input', name: 'name', message: 'Name:', validate: (i) => i.length > 0 || 'Required' },
-      { type: 'input', name: 'email', message: 'Email (optional):' },
-      { type: 'input', name: 'role', message: 'Role (e.g., "Engineer", "Designer"):' },
-      { type: 'input', name: 'team', message: 'Team (e.g., "Engineering", "Marketing"):' },
-      { type: 'input', name: 'expertise', message: 'Expertise (comma-separated, e.g., "frontend, react, css"):' },
-    ]);
+    p.intro(chalk.bgCyan(chalk.black(' Add Team Member ')));
 
+    const name = await p.text({
+      message: 'Name',
+      validate: (v) => !v?.trim() ? 'Required' : undefined,
+    });
+    if (p.isCancel(name)) return;
+
+    const role = await p.text({
+      message: 'Role (e.g., "Engineer", "Designer")',
+      placeholder: 'Optional',
+    });
+
+    const team = await p.text({
+      message: 'Team (e.g., "Engineering", "Marketing")',
+      placeholder: 'Optional',
+    });
+
+    const expertise = await p.text({
+      message: 'Expertise (comma-separated)',
+      placeholder: 'e.g., frontend, react, design',
+    });
+
+    const storage = new Storage(DB_PATH);
     const user = storage.createUser({
-      name: answers.name,
-      email: answers.email || undefined,
-      role: answers.role || undefined,
-      team: answers.team || undefined,
-      expertise: answers.expertise ? answers.expertise.split(',').map((s: string) => s.trim()) : undefined,
+      name: String(name),
+      role: role && !p.isCancel(role) ? String(role) : undefined,
+      team: team && !p.isCancel(team) ? String(team) : undefined,
+      expertise: expertise && !p.isCancel(expertise) 
+        ? String(expertise).split(',').map(s => s.trim()).filter(Boolean) 
+        : undefined,
     });
 
     storage.createAgent({
@@ -411,11 +578,10 @@ program
       status: 'active',
     });
 
-    console.log(chalk.green(`\n✅ Added ${user.name} to your organization!\n`));
-    console.log(chalk.gray(`Your agent will now consider ${user.name} when routing requests.\n`));
+    p.outro(chalk.green(`Added ${user.name}!`));
   });
 
-// List members
+// Members
 program
   .command('members')
   .alias('team')
@@ -424,48 +590,78 @@ program
     const storage = new Storage(DB_PATH);
     const users = storage.getAllUsers();
     
-    console.log(chalk.cyan('\n👥 Team Members:\n'));
+    console.log(chalk.cyan('\n👥 Team\n'));
     
     if (users.length === 0) {
-      console.log('  No members yet. Run `agentcomm add-member` to add someone.\n');
+      console.log(chalk.gray('  No members yet. Run `agentcomm add-member`.\n'));
       return;
     }
 
     users.forEach(u => {
       console.log(`  ${chalk.bold(u.name)}${u.role ? chalk.gray(` · ${u.role}`) : ''}`);
       if (u.team) console.log(`    ${chalk.gray(`Team: ${u.team}`)}`);
-      if (u.expertise?.length) console.log(`    ${chalk.gray(`Expertise: ${u.expertise.join(', ')}`)}`);
+      if (u.expertise?.length) console.log(`    ${chalk.gray(`Knows: ${u.expertise.join(', ')}`)}`);
       console.log();
     });
   });
 
-// Slack integration
+// Slack
 program
   .command('slack')
-  .description('Start the Slack integration')
+  .description('Start Slack integration')
   .action(async () => {
     const config = loadConfig();
     
     if (!config?.slackBotToken || !config?.slackAppToken) {
-      console.log(chalk.yellow('\nSlack not configured. Let\'s set it up.\n'));
-      console.log(chalk.gray('You\'ll need a Slack app. Create one at: https://api.slack.com/apps\n'));
+      p.intro(chalk.bgCyan(chalk.black(' Slack Setup ')));
       
-      const answers = await inquirer.prompt([
-        { type: 'input', name: 'slackBotToken', message: 'Slack Bot Token (xoxb-...):', validate: (i) => i.startsWith('xoxb-') || 'Should start with xoxb-' },
-        { type: 'input', name: 'slackAppToken', message: 'Slack App Token (xapp-...):', validate: (i) => i.startsWith('xapp-') || 'Should start with xapp-' },
-        { type: 'input', name: 'slackSigningSecret', message: 'Slack Signing Secret:' },
-      ]);
+      p.note(
+        'Create a Slack app at https://api.slack.com/apps\n\n' +
+        'Required:\n' +
+        '1. Enable Socket Mode → get App Token (xapp-...)\n' +
+        '2. Add Bot Token Scopes: chat:write, im:history, im:write, users:read\n' +
+        '3. Install to workspace → get Bot Token (xoxb-...)\n' +
+        '4. Copy Signing Secret from Basic Information',
+        'Setup Instructions'
+      );
 
-      const newConfig = { ...config, ...answers };
-      saveConfig(newConfig);
-      console.log(chalk.green('\n✅ Slack credentials saved!\n'));
+      const slackBotToken = await p.text({
+        message: 'Bot Token (xoxb-...)',
+        validate: (v) => v && !v.startsWith('xoxb-') ? 'Should start with xoxb-' : undefined,
+      });
+      if (p.isCancel(slackBotToken)) return;
+
+      const slackAppToken = await p.text({
+        message: 'App Token (xapp-...)',
+        validate: (v) => v && !v.startsWith('xapp-') ? 'Should start with xapp-' : undefined,
+      });
+      if (p.isCancel(slackAppToken)) return;
+
+      const slackSigningSecret = await p.text({
+        message: 'Signing Secret',
+      });
+
+      const newConfig = { 
+        ...config, 
+        slackBotToken: String(slackBotToken),
+        slackAppToken: String(slackAppToken),
+        slackSigningSecret: slackSigningSecret ? String(slackSigningSecret) : undefined,
+      };
+      saveConfig(newConfig as CLIConfig);
+      
+      p.outro(chalk.green('Slack configured!'));
     }
 
     const updatedConfig = loadConfig()!;
     
-    const { startSlackApp } = await import('../slack/index.js');
+    if (!updatedConfig.apiKey) {
+      console.log(chalk.yellow('API key not configured. Run `agentcomm setup`.\n'));
+      return;
+    }
+
+    console.log(chalk.cyan('\n🚀 Starting Slack bot...\n'));
     
-    console.log(chalk.cyan('\n🚀 Starting Slack integration...\n'));
+    const { startSlackApp } = await import('../slack/index.js');
     
     await startSlackApp({
       token: updatedConfig.slackBotToken!,
@@ -474,94 +670,46 @@ program
       llmConfig: {
         provider: updatedConfig.llmProvider,
         model: updatedConfig.llmModel,
-        apiKey: updatedConfig.apiKey || '',
+        apiKey: updatedConfig.apiKey,
       },
       dbPath: DB_PATH,
     });
   });
 
-// Web dashboard
+// Dashboard
 program
   .command('dashboard')
   .alias('web')
-  .description('Start the web dashboard')
+  .description('Start web dashboard')
   .action(async () => {
     if (!isConfigured()) {
-      console.log(chalk.yellow('Please run `agentcomm` first to set up.\n'));
+      console.log(chalk.yellow('Run `agentcomm` first to set up.\n'));
       return;
     }
-
-    console.log(chalk.cyan('\n🌐 Starting web dashboard...\n'));
+    console.log(chalk.cyan('\n🌐 Starting dashboard...\n'));
     await import('../web/server.js');
   });
 
-// Daemon mode
+// Reset
 program
-  .command('daemon')
-  .description('Run AgentComm as a background service (auto follow-ups)')
+  .command('reset')
+  .description('Delete all local data')
   .action(async () => {
-    const config = loadConfig();
-    
-    if (!config?.userId || !config?.apiKey) {
-      console.log(chalk.yellow('Please run `agentcomm` first to set up.\n'));
+    const confirm = await p.confirm({
+      message: chalk.red('Delete all AgentComm data? This cannot be undone.'),
+      initialValue: false,
+    });
+
+    if (p.isCancel(confirm) || !confirm) {
+      console.log(chalk.gray('Cancelled.\n'));
       return;
     }
 
-    console.log(chalk.cyan('🤖 AgentComm daemon starting...'));
-    console.log(chalk.gray('Running follow-up checks every hour. Press Ctrl+C to stop.\n'));
-
-    const storage = new Storage(DB_PATH);
-    const user = storage.getUser(config.userId);
-    const agentRecord = storage.getAgentByUserId(config.userId);
-    
-    if (!user || !agentRecord) return;
-
-    const agent = new CommunicationAgent(
-      user, 
-      agentRecord, 
-      { 
-        llmConfig: { provider: config.llmProvider, model: config.llmModel, apiKey: config.apiKey },
-        dbPath: DB_PATH 
-      }, 
-      storage, 
-      config.orgContext
-    );
-
-    const processFollowUps = async () => {
-      console.log(chalk.gray(`[${new Date().toISOString()}] Checking for follow-ups...`));
-      await agent.processFollowUps();
-    };
-
-    await processFollowUps();
-    setInterval(processFollowUps, 60 * 60 * 1000);
-
-    process.on('SIGINT', () => {
-      console.log(chalk.gray('\nShutting down daemon...\n'));
-      process.exit(0);
-    });
-  });
-
-// Reset command
-program
-  .command('reset')
-  .description('Reset AgentComm (delete all local data)')
-  .action(async () => {
-    const { confirm } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: chalk.red('This will delete all local data. Are you sure?'),
-        default: false,
-      },
-    ]);
-
-    if (confirm) {
-      const { rmSync } = await import('fs');
-      if (existsSync(CONFIG_DIR)) {
-        rmSync(CONFIG_DIR, { recursive: true });
-      }
-      console.log(chalk.green('\n✅ AgentComm has been reset. Run `agentcomm` to set up again.\n'));
+    if (existsSync(CONFIG_DIR)) {
+      rmSync(CONFIG_DIR, { recursive: true });
     }
+    
+    console.log(chalk.green('\n✅ Reset complete. Run `agentcomm` to start fresh.\n'));
   });
 
 program.parse();

@@ -152,13 +152,59 @@ When connected to Slack, agent-to-agent communication happens through Slack DMs.
 
 ## Team Setup
 
-For a startup/team to adopt AgentComm:
+### Quick Way (10 people, 5 minutes)
 
-1. **Each person** runs `npx agentcomm` on their machine
-2. **Connect to the same Slack workspace** via `agentcomm slack`
-3. **Add teammates** with `agentcomm add-member` (or they auto-sync from Slack)
+**Admin (once):**
+```bash
+npx agentcomm org init
+# Enter org name + Slack app credentials
+# Get invite code: eyJvcmdOYW1lIjoi...
+```
 
-That's it — agents can now route requests to each other via Slack.
+**Team members:**
+```bash
+npx agentcomm join eyJvcmdOYW1lIjoi...
+# Enter your name + API key
+# Done!
+```
+
+That's it. Everyone's connected to the same Slack workspace and can route requests to each other.
+
+### Step by Step
+
+1. **Admin creates Slack app** at [api.slack.com/apps](https://api.slack.com/apps)
+   - Enable Socket Mode
+   - Add scopes: `chat:write`, `im:history`, `im:write`, `users:read`
+   - Install to workspace
+
+2. **Admin runs:**
+   ```bash
+   npx agentcomm org init
+   ```
+   This generates an invite code.
+
+3. **Share invite code** with team (Slack, email, etc.)
+
+4. **Each team member runs:**
+   ```bash
+   npx agentcomm join <invite-code>
+   ```
+   They enter their name and their own API key.
+
+5. **Everyone can now:**
+   ```bash
+   agentcomm          # Chat with their agent
+   agentcomm slack    # Start Slack bot
+   ```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `agentcomm org init` | Create organization (admin) |
+| `agentcomm org invite` | Generate new invite code |
+| `agentcomm org info` | Show org details |
+| `agentcomm join <code>` | Join with invite code |
 
 ## Configuration
 

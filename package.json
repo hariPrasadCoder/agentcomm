@@ -44,6 +44,7 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
+    "@clack/prompts": "^0.7.0",
     "@slack/bolt": "^3.21.0",
     "@slack/web-api": "^7.3.0",
     "better-sqlite3": "^11.3.0",
@@ -51,15 +52,12 @@
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "inquirer": "^10.2.0",
     "openai": "^4.67.0",
-    "ora": "^8.1.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/express": "^4.17.21",
-    "@types/inquirer": "^9.0.7",
     "@types/node": "^22.5.0",
     "@types/ws": "^8.5.12",
     "eslint": "^9.10.0",

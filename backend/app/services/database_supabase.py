@@ -1,5 +1,5 @@
 """
-Supabase database service - handles all database operations
+Supabase database service - handles all database operations via Supabase
 """
 from supabase import create_client, Client
 from typing import Optional, List, Dict, Any
@@ -15,12 +15,12 @@ from ..models.schemas import (
 )
 
 
-class DatabaseService:
+class SupabaseDatabaseService:
     def __init__(self):
         settings = get_settings()
         self.client: Client = create_client(
             settings.supabase_url,
-            settings.supabase_service_key  # Use service key for admin operations
+            settings.supabase_service_key
         )
     
     # ============ Users ============
@@ -42,9 +42,9 @@ class DatabaseService:
         result = self.client.table("users").select("*").eq("id", user_id).execute()
         return User(**result.data[0]) if result.data else None
     
-    def get_user_by_email(self, email: str) -> Optional[User]:
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
         result = self.client.table("users").select("*").eq("email", email).execute()
-        return User(**result.data[0]) if result.data else None
+        return result.data[0] if result.data else None
     
     def update_user(self, user_id: str, updates: Dict[str, Any]) -> User:
         result = self.client.table("users").update(updates).eq("id", user_id).execute()
@@ -72,10 +72,8 @@ class DatabaseService:
         result = self.client.table("organizations").insert(data).execute()
         org_data = result.data[0]
         
-        # Update user's org_id
         self.client.table("users").update({"org_id": org_data["id"]}).eq("id", owner_id).execute()
         
-        # Create default #general channel
         self.create_channel(
             ChannelCreate(name="general", description="General discussion", channel_type=ChannelType.PUBLIC),
             org_id=org_data["id"],
@@ -95,7 +93,6 @@ class DatabaseService:
     def join_organization(self, user_id: str, org_id: str) -> User:
         result = self.client.table("users").update({"org_id": org_id}).eq("id", user_id).execute()
         
-        # Add to all public channels
         channels = self.client.table("channels").select("id").eq("org_id", org_id).eq("channel_type", "public").execute()
         for ch in channels.data:
             self.add_channel_member(ch["id"], user_id)
@@ -146,10 +143,8 @@ class DatabaseService:
         result = self.client.table("channels").insert(data).execute()
         channel_data = result.data[0]
         
-        # Add creator as member
         self.add_channel_member(channel_data["id"], created_by)
         
-        # If public, add all org users
         if channel.channel_type == ChannelType.PUBLIC:
             users = self.get_org_users(org_id)
             for u in users:
@@ -163,7 +158,6 @@ class DatabaseService:
         return Channel(**result.data[0]) if result.data else None
     
     def get_user_channels(self, user_id: str, org_id: str) -> List[Channel]:
-        # Get channel IDs user is member of
         memberships = self.client.table("channel_members").select("channel_id").eq("user_id", user_id).execute()
         channel_ids = [m["channel_id"] for m in memberships.data]
         
@@ -181,7 +175,7 @@ class DatabaseService:
                 "joined_at": datetime.utcnow().isoformat()
             }).execute()
         except Exception:
-            pass  # Already a member
+            pass
     
     def remove_channel_member(self, channel_id: str, user_id: str) -> None:
         self.client.table("channel_members").delete().eq("channel_id", channel_id).eq("user_id", user_id).execute()
@@ -199,15 +193,12 @@ class DatabaseService:
     # ============ Direct Messages ============
     
     def get_or_create_dm(self, org_id: str, user1_id: str, user2_id: str) -> Dict[str, Any]:
-        """Get or create a DM conversation between two users"""
-        # Check if DM exists
         sorted_ids = sorted([user1_id, user2_id])
         result = self.client.table("dm_conversations").select("*").eq("org_id", org_id).contains("participant_ids", sorted_ids).execute()
         
         if result.data:
             return result.data[0]
         
-        # Create new DM
         data = {
             "org_id": org_id,
             "participant_ids": sorted_ids,
@@ -251,23 +242,19 @@ class DatabaseService:
     
     def get_channel_messages(self, channel_id: str, limit: int = 50, before: Optional[str] = None) -> List[Dict[str, Any]]:
         query = self.client.table("messages").select("*, sender:users(*)").eq("channel_id", channel_id).order("created_at", desc=True).limit(limit)
-        
         if before:
             query = query.lt("created_at", before)
-        
-        result = query.execute()
-        return list(reversed(result.data))  # Return in chronological order
-    
-    def get_dm_messages(self, dm_id: str, limit: int = 50, before: Optional[str] = None) -> List[Dict[str, Any]]:
-        query = self.client.table("messages").select("*, sender:users(*)").eq("dm_conversation_id", dm_id).order("created_at", desc=True).limit(limit)
-        
-        if before:
-            query = query.lt("created_at", before)
-        
         result = query.execute()
         return list(reversed(result.data))
     
-    # ============ Requests (AI-routed tasks) ============
+    def get_dm_messages(self, dm_id: str, limit: int = 50, before: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = self.client.table("messages").select("*, sender:users(*)").eq("dm_conversation_id", dm_id).order("created_at", desc=True).limit(limit)
+        if before:
+            query = query.lt("created_at", before)
+        result = query.execute()
+        return list(reversed(result.data))
+    
+    # ============ Requests ============
     
     def create_request(
         self, 
@@ -296,12 +283,11 @@ class DatabaseService:
         result = self.client.table("requests").insert(data).execute()
         request_data = result.data[0]
         
-        # Create task for recipient
         if to_user_id:
             self.create_task(
                 user_id=to_user_id,
                 request_id=request_data["id"],
-                title=f"Request from {from_user_id}",  # Will be resolved with name
+                title=f"Request from {from_user_id}",
                 description=content,
                 priority=priority,
                 due_date=due_date
@@ -358,10 +344,8 @@ class DatabaseService:
     
     def get_user_tasks(self, user_id: str, status: Optional[RequestStatus] = None) -> List[Task]:
         query = self.client.table("tasks").select("*").eq("user_id", user_id)
-        
         if status:
             query = query.eq("status", status.value)
-        
         result = query.order("created_at", desc=True).execute()
         return [Task(**t) for t in result.data]
     
@@ -391,10 +375,8 @@ class DatabaseService:
     
     def get_user_notifications(self, user_id: str, unread_only: bool = False) -> List[Dict[str, Any]]:
         query = self.client.table("notifications").select("*").eq("user_id", user_id)
-        
         if unread_only:
             query = query.eq("is_read", False)
-        
         result = query.order("created_at", desc=True).limit(50).execute()
         return result.data
     
@@ -405,12 +387,12 @@ class DatabaseService:
         self.client.table("notifications").update({"is_read": True}).eq("user_id", user_id).eq("is_read", False).execute()
 
 
-# Singleton instance
-_db_service: Optional[DatabaseService] = None
+# Singleton
+_supabase_db_service: Optional[SupabaseDatabaseService] = None
 
 
-def get_database() -> DatabaseService:
-    global _db_service
-    if _db_service is None:
-        _db_service = DatabaseService()
-    return _db_service
+def get_supabase_database() -> SupabaseDatabaseService:
+    global _supabase_db_service
+    if _supabase_db_service is None:
+        _supabase_db_service = SupabaseDatabaseService()
+    return _supabase_db_service

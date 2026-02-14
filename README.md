@@ -56,23 +56,52 @@ A complete web application that replaces traditional synchronous communication (
 
 - Python 3.11+
 - Node.js 18+
-- A [Supabase](https://supabase.com) account (free tier works)
 - An [Anthropic](https://anthropic.com) API key (or OpenAI)
 
-### 1. Set up Supabase
+### Option A: Local Mode (Fastest - No Cloud Setup!)
 
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-2. Go to the SQL Editor and run the schema:
-   ```sql
-   -- Copy and paste the contents of supabase/schema.sql
-   ```
-3. Get your credentials from Project Settings > API:
-   - `SUPABASE_URL` - Project URL
-   - `SUPABASE_KEY` - `anon` public key
-   - `SUPABASE_SERVICE_KEY` - `service_role` key (keep secret!)
-   - `JWT_SECRET` - JWT Secret (from Auth settings)
+Perfect for testing. Uses SQLite locally - just add your AI key and go.
 
-### 2. Set up the Backend
+**1. Backend:**
+```bash
+cd backend
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Quick setup - just set your AI key
+echo 'DB_MODE=local
+ANTHROPIC_API_KEY=your-anthropic-key-here' > .env
+
+# Run!
+uvicorn app.main:app --reload --port 8000
+```
+
+**2. Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**3. Open http://localhost:3000** - Sign up and start testing!
+
+---
+
+### Option B: Production Mode (Supabase)
+
+For production with real-time sync, proper auth, and scalability.
+
+**1. Set up Supabase:**
+1. Create project at [supabase.com](https://supabase.com)
+2. SQL Editor → paste `supabase/schema.sql` → Run
+3. Get credentials from Settings → API
+
+**2. Backend:
 
 ```bash
 cd backend

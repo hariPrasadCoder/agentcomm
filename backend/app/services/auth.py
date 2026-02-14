@@ -1,51 +1,95 @@
 """
-Authentication service using Supabase Auth
+Authentication service - supports both local (JWT) and Supabase modes
 """
-from supabase import create_client, Client
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from ..config import get_settings
 from ..models.schemas import User, UserCreate, UserWithToken
-from .database import get_database, DatabaseService
 
 security = HTTPBearer()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class AuthService:
     def __init__(self):
-        settings = get_settings()
-        # Use anon key for auth operations (client-side equivalent)
-        self.client: Client = create_client(
-            settings.supabase_url,
-            settings.supabase_key
-        )
-        self.db = get_database()
+        self.settings = get_settings()
+        self.is_local = self.settings.db_mode == "local"
+        
+        if self.is_local:
+            from .database_local import get_local_database
+            self.db = get_local_database()
+        else:
+            from .database import get_database
+            self.db = get_database()
+            # Also init Supabase client for auth
+            from supabase import create_client
+            self.supabase = create_client(
+                self.settings.supabase_url,
+                self.settings.supabase_key
+            )
+    
+    def _hash_password(self, password: str) -> str:
+        return pwd_context.hash(password)
+    
+    def _verify_password(self, plain: str, hashed: str) -> bool:
+        return pwd_context.verify(plain, hashed)
+    
+    def _create_token(self, user_id: str) -> str:
+        expire = datetime.utcnow() + timedelta(hours=self.settings.jwt_expiry_hours)
+        payload = {"sub": user_id, "exp": expire}
+        return jwt.encode(payload, self.settings.jwt_secret, algorithm=self.settings.jwt_algorithm)
+    
+    def _decode_token(self, token: str) -> str:
+        """Decode token and return user_id"""
+        try:
+            payload = jwt.decode(token, self.settings.jwt_secret, algorithms=[self.settings.jwt_algorithm])
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            return user_id
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     def sign_up(self, email: str, password: str, name: str, role: Optional[str] = None) -> UserWithToken:
         """Register a new user"""
+        if self.is_local:
+            return self._local_signup(email, password, name, role)
+        else:
+            return self._supabase_signup(email, password, name, role)
+    
+    def _local_signup(self, email: str, password: str, name: str, role: Optional[str]) -> UserWithToken:
+        # Check if user exists
+        existing = self.db.get_user_by_email(email)
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        # Create user
+        password_hash = self._hash_password(password)
+        user_create = UserCreate(email=email, name=name, role=role, password=password)
+        user = self.db.create_user(user_create, password_hash)
+        
+        # Generate token
+        token = self._create_token(user.id)
+        
+        return UserWithToken(**user.model_dump(), access_token=token)
+    
+    def _supabase_signup(self, email: str, password: str, name: str, role: Optional[str]) -> UserWithToken:
         try:
-            # Create auth user in Supabase
-            auth_response = self.client.auth.sign_up({
+            auth_response = self.supabase.auth.sign_up({
                 "email": email,
                 "password": password
             })
             
             if not auth_response.user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Failed to create user"
-                )
+                raise HTTPException(status_code=400, detail="Failed to create user")
             
-            # Create user profile in our database
-            user_create = UserCreate(
-                email=email,
-                name=name,
-                role=role,
-                password=password  # Not stored, just for schema
-            )
+            # Create user profile
+            user_create = UserCreate(email=email, name=name, role=role, password=password)
             user = self.db.create_user(user_create, auth_response.user.id)
             
             return UserWithToken(
@@ -54,105 +98,82 @@ class AuthService:
             )
         except Exception as e:
             if "already registered" in str(e).lower():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered"
-                )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+                raise HTTPException(status_code=400, detail="Email already registered")
+            raise HTTPException(status_code=400, detail=str(e))
     
     def sign_in(self, email: str, password: str) -> UserWithToken:
         """Sign in an existing user"""
+        if self.is_local:
+            return self._local_signin(email, password)
+        else:
+            return self._supabase_signin(email, password)
+    
+    def _local_signin(self, email: str, password: str) -> UserWithToken:
+        user_data = self.db.get_user_by_email(email)
+        if not user_data:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        if not self._verify_password(password, user_data["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        user = self.db.get_user(user_data["id"])
+        token = self._create_token(user.id)
+        
+        return UserWithToken(**user.model_dump(), access_token=token)
+    
+    def _supabase_signin(self, email: str, password: str) -> UserWithToken:
         try:
-            auth_response = self.client.auth.sign_in_with_password({
+            auth_response = self.supabase.auth.sign_in_with_password({
                 "email": email,
                 "password": password
             })
             
             if not auth_response.user or not auth_response.session:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid credentials"
-                )
+                raise HTTPException(status_code=401, detail="Invalid credentials")
             
-            # Get user profile
             user = self.db.get_user(auth_response.user.id)
             if not user:
-                # Create profile if missing (shouldn't happen normally)
                 user = self.db.create_user(
                     UserCreate(email=email, name=email.split("@")[0], password=password),
                     auth_response.user.id
                 )
             
-            return UserWithToken(
-                **user.model_dump(),
-                access_token=auth_response.session.access_token
-            )
+            return UserWithToken(**user.model_dump(), access_token=auth_response.session.access_token)
         except HTTPException:
             raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials"
-            )
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
     
     def sign_out(self, token: str) -> None:
         """Sign out a user"""
-        try:
-            self.client.auth.sign_out()
-        except Exception:
-            pass  # Ignore sign out errors
+        if not self.is_local:
+            try:
+                self.supabase.auth.sign_out()
+            except Exception:
+                pass
     
     def get_user_from_token(self, token: str) -> User:
         """Validate token and return user"""
-        try:
-            # Verify token with Supabase
-            user_response = self.client.auth.get_user(token)
-            
-            if not user_response.user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired token"
-                )
-            
-            # Get user profile
-            user = self.db.get_user(user_response.user.id)
+        if self.is_local:
+            user_id = self._decode_token(token)
+            user = self.db.get_user(user_id)
             if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User profile not found"
-                )
-            
+                raise HTTPException(status_code=404, detail="User not found")
             return user
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-    
-    def refresh_token(self, refresh_token: str) -> dict:
-        """Refresh access token"""
-        try:
-            response = self.client.auth.refresh_session(refresh_token)
-            if not response.session:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Failed to refresh token"
-                )
-            return {
-                "access_token": response.session.access_token,
-                "refresh_token": response.session.refresh_token,
-                "expires_at": response.session.expires_at
-            }
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Failed to refresh token"
-            )
+        else:
+            try:
+                user_response = self.supabase.auth.get_user(token)
+                if not user_response.user:
+                    raise HTTPException(status_code=401, detail="Invalid token")
+                
+                user = self.db.get_user(user_response.user.id)
+                if not user:
+                    raise HTTPException(status_code=404, detail="User profile not found")
+                return user
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 # Singleton

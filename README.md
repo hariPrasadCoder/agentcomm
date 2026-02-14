@@ -1,88 +1,130 @@
-# 🤖 AgentComm
+# 🤖 AgentComm Web
 
-**AI-first communication for teams. Talk to your agent, it handles the rest.**
+**AI-first communication platform for teams. Talk to your agent, it handles the rest.**
 
-```bash
-npx agentcomm
-```
-
-One command. 30 seconds. You're chatting with your AI communication agent.
+A complete web application that replaces traditional synchronous communication (like Slack) with an AI-agent-based asynchronous communication model. Each team member has an AI agent that routes requests, tracks follow-ups, and manages their communication queue.
 
 ---
 
-## ⚡ Setup in 30 Seconds
+## 🌟 Features
 
-```bash
-npx agentcomm
-```
-
-That's it. The setup wizard guides you through:
-
-```
-◆  How would you like to set up AgentComm?
-│  ● QuickStart — Just the basics, get chatting in 30 seconds
-│  ○ Full Setup — Configure Slack integration and team members
-```
-
-You'll enter:
-1. Your name
-2. OpenAI or Anthropic
-3. Your API key
-
-Done. Start chatting.
+- **AI Agent Chat** - Talk naturally to your agent to send requests, check status, and manage tasks
+- **Smart Routing** - AI automatically determines who should handle each request
+- **Task Queue** - Clear visibility into what needs your attention
+- **Request Tracking** - Monitor the status of your outgoing requests
+- **Automatic Follow-ups** - Agent follows up on stale requests automatically
+- **Team Channels** - Public channels for team-wide discussions
+- **Direct Messages** - Private 1-on-1 conversations
+- **Real-time Updates** - WebSocket-based live messaging
+- **Organization Management** - Create orgs, invite team members with codes
 
 ---
 
-## 🏢 Team Setup (10 people, 5 minutes)
+## 🏗️ Architecture
 
-### Admin (once):
-```bash
-npx agentcomm org init
-
-# You'll enter:
-#   Organization name: Acme Startup
-#   Slack Bot Token: xoxb-...
-#   Slack App Token: xapp-...
-#   Signing Secret: ...
-#
-# You'll get an invite code:
-#   🎟️ eyJvcmdOYW1lIjoiQWNtZS...
 ```
-
-### Team Members:
-```bash
-npx agentcomm join eyJvcmdOYW1lIjoiQWNtZS...
-
-# You'll enter:
-#   Your name: Sarah
-#   Your AI provider: OpenAI
-#   Your API key: sk-...
-#
-# Done! Welcome to Acme Startup! 🎉
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React + Vite)                  │
+│  - Authentication UI                                        │
+│  - Organization onboarding                                  │
+│  - AI Agent chat interface                                  │
+│  - Channels & Direct Messages                               │
+│  - Tasks & Requests views                                   │
+└─────────────────────────────────────────────────────────────┘
+                              ↕ API + WebSocket
+┌─────────────────────────────────────────────────────────────┐
+│                  BACKEND (FastAPI + Python)                 │
+│  - REST API for all operations                              │
+│  - WebSocket server for real-time updates                   │
+│  - AI Agent service (Claude SDK)                            │
+│  - Authentication via Supabase Auth                         │
+└─────────────────────────────────────────────────────────────┘
+                              ↕
+┌─────────────────────────────────────────────────────────────┐
+│                    DATABASE (Supabase)                      │
+│  - PostgreSQL with Row Level Security                       │
+│  - Real-time subscriptions                                  │
+│  - Built-in authentication                                  │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-**That's the entire team setup.** Share the invite code in Slack, everyone runs one command, you're connected.
 
 ---
 
-## 🤔 What Is This?
+## 🚀 Quick Start
 
-AgentComm puts an AI agent between you and your team's communication.
+### Prerequisites
 
-**Instead of:**
-```
-You → Slack → Find the right person → Send message → Wait → Follow up → Wait...
+- Python 3.11+
+- Node.js 18+
+- A [Supabase](https://supabase.com) account (free tier works)
+- An [Anthropic](https://anthropic.com) API key (or OpenAI)
+
+### 1. Set up Supabase
+
+1. Create a new Supabase project at [supabase.com](https://supabase.com)
+2. Go to the SQL Editor and run the schema:
+   ```sql
+   -- Copy and paste the contents of supabase/schema.sql
+   ```
+3. Get your credentials from Project Settings > API:
+   - `SUPABASE_URL` - Project URL
+   - `SUPABASE_KEY` - `anon` public key
+   - `SUPABASE_SERVICE_KEY` - `service_role` key (keep secret!)
+   - `JWT_SECRET` - JWT Secret (from Auth settings)
+
+### 2. Set up the Backend
+
+```bash
+cd backend
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your Supabase and Anthropic credentials
+
+# Run the server
+uvicorn app.main:app --reload --port 8000
 ```
 
-**You do:**
-```
-You → Your Agent → Agent figures out who to ask → Tracks it → Follows up → Reports back
+### 3. Set up the Frontend
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Configure environment (optional)
+cp .env.example .env
+
+# Run the dev server
+npm run dev
 ```
 
-### Example
+### 4. Open the App
+
+Visit [http://localhost:3000](http://localhost:3000)
+
+1. **Sign up** with your email
+2. **Create an organization** or join with an invite code
+3. **Start chatting** with your AI agent!
+
+---
+
+## 📖 How It Works
+
+### The AI Agent
+
+Every user has a personal AI agent that handles their communication:
 
 ```
-You: I need the Q4 marketing report
+You: "I need the Q4 marketing report"
 
 Agent: Got it! I've sent your request to Sarah (Marketing Lead).
        I'll follow up if she doesn't respond and let you know 
@@ -93,242 +135,178 @@ Agent: Got it! I've sent your request to Sarah (Marketing Lead).
 Agent: ✅ Sarah responded! Here's the Q4 report: [link]
 ```
 
-### Your Agent Handles:
-- **Routing** — Figures out who should answer your question
-- **Tracking** — Keeps track of open requests
-- **Follow-ups** — Automatically nudges if no response
-- **Task Queue** — Shows you what others need from you
+### Request Flow
+
+1. **You** tell your agent what you need
+2. **Agent** determines who should handle it (using org context)
+3. **Request** is created and appears in recipient's task queue
+4. **Recipient** sees task and responds
+5. **You** get notified of the response
+
+### Task Queue
+
+Instead of drowning in messages, you have a clear task queue:
+- See exactly what others need from you
+- Prioritized by urgency
+- Respond directly from the queue
+- Never miss important requests
 
 ---
 
-## 📦 Installation Options
+## 🛠️ Tech Stack
 
-### Recommended: npx (no install)
-```bash
-npx agentcomm
-```
+**Frontend:**
+- React 18 with TypeScript
+- Vite for fast builds
+- TailwindCSS for styling
+- Zustand for state management
+- Radix UI for accessible components
 
-### Global install
-```bash
-npm install -g agentcomm
-agentcomm
-```
+**Backend:**
+- Python 3.11+
+- FastAPI for the REST API
+- Anthropic Claude SDK for AI
+- WebSockets for real-time
 
-### From source
-```bash
-git clone https://github.com/hariPrasadCoder/agentcomm.git
-cd agentcomm
-npm install && npm run build
-npm start
-```
-
----
-
-## 🎮 Commands
-
-### Daily Use
-| Command | What it does |
-|---------|--------------|
-| `agentcomm` | Chat with your agent |
-| `agentcomm tasks` | See what others need from you |
-| `agentcomm status` | Check your outgoing requests |
-
-### Team Management
-| Command | What it does |
-|---------|--------------|
-| `agentcomm org init` | Create organization (admin) |
-| `agentcomm org invite` | Generate new invite code |
-| `agentcomm join <code>` | Join org with invite code |
-| `agentcomm add-member` | Manually add a teammate |
-| `agentcomm members` | List team members |
-
-### Integrations
-| Command | What it does |
-|---------|--------------|
-| `agentcomm slack` | Start Slack integration |
-| `agentcomm dashboard` | Open web UI |
-
-### Utilities
-| Command | What it does |
-|---------|--------------|
-| `agentcomm setup` | Re-run setup wizard |
-| `agentcomm reset` | Delete all local data |
+**Database:**
+- Supabase (PostgreSQL)
+- Row Level Security
+- Real-time subscriptions
 
 ---
 
-## 💬 Slack Integration
-
-AgentComm is most powerful when connected to Slack — agents communicate through Slack DMs.
-
-### Option 1: Team Already Set Up
-If your admin gave you an invite code:
-```bash
-npx agentcomm join <invite-code>
-agentcomm slack
-```
-Done!
-
-### Option 2: Set Up Slack Yourself
-
-1. **Create Slack app** at [api.slack.com/apps](https://api.slack.com/apps)
-
-2. **Enable Socket Mode** → Get App Token (`xapp-...`)
-
-3. **Add Bot Scopes:**
-   - `chat:write`
-   - `im:history`
-   - `im:write`
-   - `users:read`
-   - `channels:read`
-
-4. **Install to workspace** → Get Bot Token (`xoxb-...`)
-
-5. **Run:**
-   ```bash
-   agentcomm slack
-   # Enter tokens when prompted
-   ```
-
----
-
-## 🖥️ Beautiful Terminal UI
-
-AgentComm uses the same terminal UI library as OpenClaw:
+## 📁 Project Structure
 
 ```
-┌─────────────────────────────────────────────────┐
-│  🤖 AgentComm — Sarah's Agent                   │
-├─────────────────────────────────────────────────┤
-│  Commands: tasks, status, help, exit            │
-└─────────────────────────────────────────────────┘
-
-You › I need the design specs from the product team
-
-  Thinking...
-
-Agent › Got it! I've sent your request to Alex (Product Design).
-        I'll follow up if they don't respond and let you know 
-        when I have an answer.
-```
-
-Features:
-- Clean, modern prompts
-- Progress spinners
-- Color-coded output
-- Keyboard shortcuts
-
----
-
-## 🔧 How It Works
-
-```
-┌─────────────────────────────────────────────────┐
-│              YOUR AGENT                         │
-│  Lives on your machine, talks to LLM            │
-└─────────────────────────────────────────────────┘
-                    ↕
-┌─────────────────────────────────────────────────┐
-│              SLACK                              │
-│  Agents communicate via DMs                     │
-└─────────────────────────────────────────────────┘
-                    ↕
-┌─────────────────────────────────────────────────┐
-│              THEIR AGENT                        │
-│  Lives on their machine                         │
-└─────────────────────────────────────────────────┘
-```
-
-**Each person:**
-- Runs AgentComm locally
-- Has their own LLM API key (costs stay separate)
-- Connects to the same Slack workspace
-
-**Data stored locally:**
-- `~/.agentcomm/config.json` — Settings
-- `~/.agentcomm/agentcomm.db` — Local database
-
----
-
-## 🤖 Supported AI Providers
-
-| Provider | Models |
-|----------|--------|
-| **OpenAI** | gpt-4o, gpt-4-turbo, gpt-3.5-turbo |
-| **Anthropic** | claude-sonnet-4-20250514, claude-3-opus |
-
-Set via environment variable or during setup:
-```bash
-export OPENAI_API_KEY=sk-...
-# or
-export ANTHROPIC_API_KEY=sk-ant-...
+agentcomm/
+├── backend/
+│   ├── app/
+│   │   ├── api/           # API route handlers
+│   │   ├── models/        # Pydantic schemas
+│   │   ├── services/      # Business logic
+│   │   ├── config.py      # Configuration
+│   │   └── main.py        # FastAPI app
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   ├── pages/         # Page components
+│   │   ├── store/         # Zustand store
+│   │   ├── lib/           # Utilities & API client
+│   │   └── types/         # TypeScript types
+│   ├── package.json
+│   └── .env.example
+├── supabase/
+│   └── schema.sql         # Database schema
+└── README.md
 ```
 
 ---
 
-## 📋 Example Workflows
+## 🔐 Environment Variables
 
-### Request from another team
-```
-You: I need legal review on the contractor agreement
+### Backend (.env)
 
-Agent: Got it! I've sent your request to Jamie (Legal).
-       I'll follow up if they don't respond within 24 hours.
-```
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_KEY` | Supabase anon/public key |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `JWT_SECRET` | Supabase JWT secret |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `DEFAULT_MODEL` | AI model (default: claude-sonnet-4-20250514) |
 
-### Check your task queue
-```
-You: tasks
+### Frontend (.env)
 
-Agent: 📥 Pending Tasks (2):
-
-       1. Request from Alex
-          "Need API docs for payment integration"
-       
-       2. Request from Jordan
-          "Review the new onboarding mockups"
-```
-
-### Respond to a task
-```
-You: 1. Here's the docs: https://docs.example.com/payments
-
-Agent: ✅ Response sent to Alex!
-```
+| Variable | Description |
+|----------|-------------|
+| `VITE_API_URL` | Backend API URL (default: /api) |
 
 ---
 
-## 🗺️ Roadmap
+## 🚢 Deployment
 
-- [ ] Agent-to-agent direct protocol
-- [ ] Microsoft Teams integration
-- [ ] Email integration
-- [ ] Vector search for team knowledge
-- [ ] Calendar integration
-- [ ] Mobile app
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+### Backend (e.g., Railway, Render, Fly.io)
 
 ```bash
-git clone https://github.com/hariPrasadCoder/agentcomm.git
-cd agentcomm
-npm install
-npm run dev
+cd backend
+# Set environment variables in your platform
+# Deploy with:
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
+
+### Frontend (e.g., Vercel, Netlify)
+
+```bash
+cd frontend
+npm run build
+# Deploy the dist/ folder
+# Set VITE_API_URL to your backend URL
+```
+
+---
+
+## 🤝 Team Onboarding
+
+### Admin (create org):
+1. Sign up and create an organization
+2. Share the invite code with your team
+
+### Team Members:
+1. Sign up
+2. Enter the invite code
+3. Start using the AI agent!
+
+---
+
+## 📝 API Reference
+
+### Authentication
+- `POST /api/auth/signup` - Register new user
+- `POST /api/auth/login` - Sign in
+- `GET /api/auth/me` - Get current user
+
+### Organizations
+- `POST /api/orgs` - Create organization
+- `POST /api/orgs/join` - Join with invite code
+- `GET /api/orgs/members` - List members
+
+### Channels
+- `GET /api/channels` - List user's channels
+- `POST /api/channels` - Create channel
+- `GET /api/channels/{id}/messages` - Get messages
+- `POST /api/channels/{id}/messages` - Send message
+
+### AI Agent
+- `POST /api/agent/chat` - Chat with your agent
+- `GET /api/agent/tasks` - Get your task queue
+- `GET /api/agent/requests` - Get your outgoing requests
+- `POST /api/agent/tasks/{id}/complete` - Complete a task
+
+### WebSocket
+- `WS /ws/{token}` - Real-time updates
+
+---
+
+## 🙏 Credits
+
+Built with:
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [React](https://react.dev/)
+- [Supabase](https://supabase.com/)
+- [Anthropic Claude](https://anthropic.com/)
+- [TailwindCSS](https://tailwindcss.com/)
 
 ---
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE).
+MIT License - see [LICENSE](LICENSE)
 
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/hariPrasadCoder">Hari Prasad</a><br>
-  <a href="https://github.com/hariPrasadCoder/agentcomm/issues">Report Bug</a> · 
-  <a href="https://github.com/hariPrasadCoder/agentcomm/issues">Request Feature</a>
+  <strong>AgentComm</strong> — The future of team communication is async + AI.<br>
+  Built by <a href="https://github.com/hariPrasadCoder">Hari Prasad</a>
 </p>

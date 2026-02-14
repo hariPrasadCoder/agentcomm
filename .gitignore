@@ -1,20 +1,19 @@
 # Dependencies
 node_modules/
-
-# Build output
-dist/
+__pycache__/
+*.pyc
+venv/
+.venv/
 
 # Environment
 .env
 .env.local
+.env.*.local
 
-# Database
-*.db
-*.db-journal
-
-# OS
-.DS_Store
-Thumbs.db
+# Build outputs
+dist/
+build/
+*.egg-info/
 
 # IDE
 .idea/
@@ -22,9 +21,18 @@ Thumbs.db
 *.swp
 *.swo
 
+# OS
+.DS_Store
+Thumbs.db
+
 # Logs
 *.log
 npm-debug.log*
 
-# Config (user-specific)
-~/.agentcomm/
+# Testing
+coverage/
+.pytest_cache/
+
+# Misc
+*.bak
+*.tmp
